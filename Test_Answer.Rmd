@@ -1,0 +1,173 @@
+---
+title: "GSoC-R 2018 Test Answer"
+output: html_notebook
+---
+
+Easy: Write code to plot the points tagged as being outlying by the current diagnostic methods in quokar, using ah or ais data provided with the package.
+
+We use ais data as real data example to tag the outliers in QR model.
+
+\item absolute residual and robust distance method:
+
+```{r}
+library(quokar)
+library(tidyverse)
+library(quantreg)
+library(gridExtra)
+ais_female <- ais %>% filter(Sex == 1)
+quantiles <- c(0.1, 0.5, 0.9)
+rq_object <- rq(BMI ~ LBM + Bfat, data = ais_female, tau = quantiles)
+dis <- frame_distance(rq_object, tau = quantiles)
+distance <- dis[[1]]
+cutoff_v <- dis[[2]]
+cutoff_h <- dis[[3]]
+n <- nrow(ais_female)
+case <- rep(1:n, length(quantiles))
+distance <- cbind(case, distance)
+distance1 <- distance %>% filter(tau_flag == 'tau0.1')
+p1 <- ggplot(distance1, aes(x = rd, y = residuals)) +
+        geom_point()+
+        geom_hline(yintercept = cutoff_h[1], colour = 'red') +
+        geom_vline(xintercept = cutoff_v, colour = 'red') +
+        geom_text(data = subset(distance1, residuals > cutoff_h[1]|rd > cutoff_v), 
+            aes(label = case), hjust = 0, vjust = 0) +
+        xlab("Robust distance") +
+        ylab("|Residuals|") +
+        theme(aspect.ratio = 1)
+distance2 <- distance %>% filter(tau_flag == 'tau0.5')
+p2 <- ggplot(distance2, aes(x = rd, y = residuals)) +
+        geom_point()+
+        geom_hline(yintercept = cutoff_h[2], colour = 'red') +
+        geom_vline(xintercept = cutoff_v, colour = 'red') +
+        geom_text(data = subset(distance1, residuals > cutoff_h[2]|rd > cutoff_v), 
+            aes(label = case), hjust = 0, vjust = 0) +
+        xlab("Robust distance") +
+        ylab("|Residuals|")+
+        theme(aspect.ratio = 1)
+distance3 <- distance %>% filter(tau_flag == 'tau0.9')
+p3 <- ggplot(distance3, aes(x = rd, y = residuals)) +
+        geom_point()+
+        geom_hline(yintercept = cutoff_h[3], colour = 'red') +
+        geom_vline(xintercept = cutoff_v, colour = 'red') +
+        geom_text(data = subset(distance1, residuals > cutoff_h[3]|rd > cutoff_v), 
+            aes(label = case), hjust = 0, vjust = 0) +
+        xlab("Robust distance") +
+        ylab("|Residuals|")+
+        theme(aspect.ratio = 1)
+grid.arrange(p1, p2, p3, ncol = 3)
+```
+
+\item General Cook' distance:
+
+```{r}
+y <- ais_female$BMI
+x <- cbind(1, ais_female$LBM, ais_female$Bfat)
+cook_distance <- frame_mle(y, x, method = "cook.distance", tau = quantiles)
+frame_cook <- data.frame(case, cook_distance)
+ggplot(frame_cook, aes(x = case, y = value)) +
+  geom_point() +
+  geom_text(data = subset(frame_cook, value > 
+                            mean(value) + 2*sd(value)),
+            aes(label = case)) +
+  facet_wrap(~variable, scales = "free") +
+  xlab("Case") +
+  ylab("Cook's distance") +
+  theme(aspect.ratio = 1)
+```
+
+\item Likelihood distance:
+
+```{r}
+qd_distance <- frame_mle(y, x, method = "qfunction", tau = quantiles)
+frame_qd <- data.frame(case, qd_distance)
+ggplot(frame_qd, aes(x = case, y = value)) +
+  geom_point() +
+  geom_text(data = subset(frame_qd, value > 
+                            mean(value) + sd(value)),
+            aes(label = case)) +
+  facet_wrap(~variable, scales = "free") +
+  xlab("Case") +
+  ylab("Likelihood distance") +
+  theme(aspect.ratio = 1)
+```
+
+\item Mean posterior probability:
+
+```{r}
+mp <- frame_bayes(y, x, M = 500, burn = 100, method = "bayes.prob", tau = quantiles)
+frame_prob <- data.frame(case, mp)
+ggplot(frame_prob, aes(x = case, y = value)) +
+  geom_point() +
+  geom_text(data = subset(frame_prob, value > 
+                            mean(value) + sd(value)),
+            aes(label = case)) +
+  facet_wrap(~variable, scales = "free") +
+  xlab("Case") +
+  ylab("Mean posterior probability") +
+  theme(aspect.ratio = 1)
+```
+
+\item Kullback-Leibler divergence
+
+```{r}
+kl <- frame_bayes(y, x, M = 500, burn = 100, method = "bayes.kl", tau = quantiles)
+frame_kl <- data.frame(case, mp)
+ggplot(frame_prob, aes(x = case, y = value)) +
+  geom_point() +
+  geom_text(data = subset(frame_kl, value > 
+                            mean(value) + sd(value)),
+            aes(label = case)) +
+  facet_wrap(~variable, scales = "free") +
+  xlab("Case") +
+  ylab("Kullback-Leibler divergence") +
+  theme(aspect.ratio = 1)
+```
+
+
+(Medium) Make plots illustrating the simplex algorithm or interior point algorithm for estimating linear quantile regression parameters.
+
+```{r}
+rq_br <- rq(BMI ~ LBM + Bfat, method = 'br', data = ais_female)
+obs <- frame_br(rq_br, tau = quantiles)$all_observation
+choose <- frame_br(rq_br, tau = quantiles)$fitting_point
+ggplot(obs,
+ aes(x=value, y=obs[,2])) +
+ geom_point(alpha = 0.1) +
+ ylab('y') +
+ xlab('x') +
+ facet_wrap(~variable, scales = "free_x", ncol = 2) +
+ geom_point(data = choose, aes(x = x, y = y,
+                                      group = tau_flag,
+                                      colour = tau_flag,
+                               shape = tau_flag))+
+ theme(aspect.ratio = 1)
+```
+
+(Hard) Make plots illustrating the interior point algorithm for estimating non-linear quantile regression parameters.
+
+```{r}
+x <- rep(1:25, 20)
+y <- SSlogis(x, 10, 12, 2) * rnorm(500, 1, 0.1)
+Dat <- data.frame(x = x, y = y)
+formula <- y ~ SSlogis(x, Aysm, mid, scal)
+obs_nlrq <- frame_nlrq(formula, data = Dat, tau = c(0.1, 0.5, 0.9))
+weights <- obs_nlrq$weights
+obs <- data.frame(Dat, weights)
+obs_f <- obs %>% gather(tau_flag, value, -x, -y)
+ggplot(obs_f, aes(x = x, y = y)) +
+ geom_point(aes(size = value)) +
+ geom_point(data = subset(obs_f, value > mean(value) + 0.1*sd(value)), aes(colour = tau_flag)) +
+ facet_wrap(~tau_flag) +
+ theme(aspect.ratio = 1)
+```
+
+
+
+
+
+
+
+
+
+
+
